@@ -31,9 +31,9 @@ module isl51002_frontend (
     input FID_i,
     input vs_type,
     input vs_polarity,
-    input [31:0] h_in_config,
-    input [31:0] h_in_config2,
-    input [31:0] v_in_config,
+    input [31:0] hv_in_config,
+    input [31:0] hv_in_config2,
+    input [31:0] hv_in_config3,
     output reg [7:0] R_o,
     output reg [7:0] G_o,
     output reg [7:0] B_o,
@@ -71,14 +71,14 @@ reg [19:0] pcnt_ctr;
 reg frame_change_meas_sync1_reg, frame_change_meas_sync2_reg, frame_change_meas_prev;
 wire frame_change_meas = frame_change_meas_sync2_reg;
 
-wire [7:0] H_SYNCLEN = h_in_config[27:20];
-wire [8:0] H_BACKPORCH = h_in_config[19:11];
-wire [10:0] H_ACTIVE = h_in_config[10:0];
-wire [11:0] H_TOTAL = h_in_config2[11:0];
+wire [11:0] H_TOTAL = hv_in_config[11:0];
+wire [10:0] H_ACTIVE = hv_in_config[22:12];
+wire [8:0] H_BACKPORCH = hv_in_config[31:23];
+wire [8:0] H_SYNCLEN = hv_in_config2[8:0];
 
-wire [2:0] V_SYNCLEN = v_in_config[19:17];
-wire [5:0] V_BACKPORCH = v_in_config[16:11];
-wire [10:0] V_ACTIVE = v_in_config[10:0];
+wire [10:0] V_ACTIVE = hv_in_config2[30:20];
+wire [8:0] V_BACKPORCH = hv_in_config3[8:0];
+wire [4:0] V_SYNCLEN = hv_in_config3[13:9];
 
 wire [11:0] even_min_thold_hv = (H_TOTAL / 12'd4);
 wire [11:0] even_max_thold_hv = (H_TOTAL / 12'd2) + (H_TOTAL / 12'd4);
