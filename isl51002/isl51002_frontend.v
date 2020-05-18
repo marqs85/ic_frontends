@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2019  Markus Hiienkari <mhiienka@niksula.hut.fi>
+// Copyright (C) 2019-2020  Markus Hiienkari <mhiienka@niksula.hut.fi>
 //
 // This file is part of Open Source Scan Converter project.
 //
@@ -31,6 +31,8 @@ module isl51002_frontend (
     input FID_i,
     input vs_type,
     input vs_polarity,
+    input csc_enable,
+    input csc_cs,
     input [31:0] hv_in_config,
     input [31:0] hv_in_config2,
     input [31:0] hv_in_config3,
@@ -54,6 +56,9 @@ localparam FID_ODD = 1'b1;
 
 localparam VSYNC_SEPARATED = 1'b0;
 localparam VSYNC_RAW = 1'b1;
+
+localparam CSC_YCBCR601_RGB = 1'b0;
+localparam CSC_YCBCR709_RGB = 1'b1;
 
 reg [11:0] h_ctr;
 reg [10:0] v_ctr;
@@ -89,6 +94,21 @@ wire [11:0] even_max_thold = (vs_type == VSYNC_SEPARATED) ? even_max_thold_ss : 
 
 // TODO: calculate V polarity independently
 wire VSYNC_i_np = (VSYNC_i ^ ~vs_polarity);
+
+// CSC_registers
+reg [10:0] Y;
+reg [10:0] Cb;
+reg [10:0] Cr;
+reg [17:0] R_Cr_coeff;
+reg [17:0] G_Cb_coeff;
+reg [17:0] G_Cr_coeff;
+reg [17:0] B_Cb_coeff;
+reg [10:0] Y_1, R_Cr, G_Cb, G_Cr, B_Cb;
+reg [7:0] R_csc, G_csc, B_csc;
+
+wire [35:0] R_Cr_pre, G_Cb_pre, G_Cr_pre, B_Cb_pre;
+wire [10:0] R_csc_sum, G_csc_sum, B_csc_sum;
+
 
 always @(posedge PCLK_i) begin
     R <= R_i;
@@ -152,9 +172,9 @@ always @(posedge PCLK_i) begin
 end
 
 always @(posedge PCLK_i) begin
-    R_o <= R;
-    G_o <= G;
-    B_o <= B;
+    R_o <= csc_enable ? R_csc : R;
+    G_o <= csc_enable ? G_csc : G;
+    B_o <= csc_enable ? B_csc : B;
     HSYNC_o <= HSYNC;
     VSYNC_o <= VSYNC;
     FID_o <= FID;
@@ -178,6 +198,140 @@ always @(posedge CLK_MEAS_i) begin
     frame_change_meas_prev <= frame_change_meas;
 end
 
-// TODO: CSC
+// CSC
+always @(posedge PCLK_i) begin
+    if (csc_enable) begin
+        Y <= {3'b000, G_i};
+        Cb <= {3'b000, B_i} - 11'd128;
+        Cr <= {3'b000, R_i} - 11'd128;
+
+        Y_1 <= Y;
+        R_Cr <= R_Cr_pre[25:15];
+        G_Cb <= G_Cb_pre[25:15];
+        G_Cr <= G_Cr_pre[25:15];
+        B_Cb <= B_Cb_pre[25:15];
+
+        if (R_csc_sum[10] == 1'b1)
+            R_csc <= 8'h00;
+        else if ((R_csc_sum[9] | R_csc_sum[8]) == 1'b1)
+            R_csc <= 8'hFF;
+        else
+            R_csc <= R_csc_sum[7:0];
+
+        if (G_csc_sum[10] == 1'b1)
+            G_csc <= 8'h00;
+        else if ((G_csc_sum[9] | G_csc_sum[8]) == 1'b1)
+            G_csc <= 8'hFF;
+        else
+            G_csc <= G_csc_sum[7:0];
+
+        if (B_csc_sum[10] == 1'b1)
+            B_csc <= 8'h00;
+        else if ((B_csc_sum[9] | B_csc_sum[8]) == 1'b1)
+            B_csc <= 8'hFF;
+        else
+            B_csc <= B_csc_sum[7:0];
+    end
+
+    if (csc_cs == CSC_YCBCR601_RGB) begin
+        R_Cr_coeff <= 18'h0B395;
+        G_Cb_coeff <= 18'h02C08;
+        G_Cr_coeff <= 18'h05B64;
+        B_Cb_coeff <= 18'h0E2F1;
+    end else begin
+        R_Cr_coeff <= 18'h0C8F9;
+        G_Cb_coeff <= 18'h017EF;
+        G_Cr_coeff <= 18'h03BB2;
+        B_Cb_coeff <= 18'h0ED84;
+    end
+end
+
+assign R_csc_sum = Y_1 + R_Cr;
+assign G_csc_sum = Y_1 - G_Cr - G_Cb;
+assign B_csc_sum = Y_1 + B_Cb;
+
+lpm_mult csc_mult_component_0 (
+    // Inputs
+    .dataa  ({{7{Cr[10]}}, Cr}),
+    .datab  (R_Cr_coeff),
+    .aclr   (1'b0),
+    .clken  (csc_enable),
+    .clock  (PCLK_i),
+
+    // Outputs
+    .result (R_Cr_pre),
+    .sum    (1'b0)
+);
+defparam
+    csc_mult_component_0.lpm_widtha             = 18,
+    csc_mult_component_0.lpm_widthb             = 18,
+    csc_mult_component_0.lpm_widthp             = 36,
+    csc_mult_component_0.lpm_widths             = 1,
+    csc_mult_component_0.lpm_type               = "LPM_MULT",
+    csc_mult_component_0.lpm_representation     = "SIGNED",
+    csc_mult_component_0.lpm_hint               = "LPM_PIPELINE=1,MAXIMIZE_SPEED=5";
+
+lpm_mult csc_mult_component_1 (
+    // Inputs
+    .dataa  ({{7{Cb[10]}}, Cb}),
+    .datab  (G_Cb_coeff),
+    .aclr   (1'b0),
+    .clken  (csc_enable),
+    .clock  (PCLK_i),
+
+    // Outputs
+    .result (G_Cb_pre),
+    .sum    (1'b0)
+);
+defparam
+    csc_mult_component_1.lpm_widtha             = 18,
+    csc_mult_component_1.lpm_widthb             = 18,
+    csc_mult_component_1.lpm_widthp             = 36,
+    csc_mult_component_1.lpm_widths             = 1,
+    csc_mult_component_1.lpm_type               = "LPM_MULT",
+    csc_mult_component_1.lpm_representation     = "SIGNED",
+    csc_mult_component_1.lpm_hint               = "LPM_PIPELINE=1,MAXIMIZE_SPEED=5";
+
+lpm_mult csc_mult_component_2 (
+    // Inputs
+    .dataa  ({{7{Cr[10]}}, Cr}),
+    .datab  (G_Cr_coeff),
+    .aclr   (1'b0),
+    .clken  (csc_enable),
+    .clock  (PCLK_i),
+
+    // Outputs
+    .result (G_Cr_pre),
+    .sum    (1'b0)
+);
+defparam
+    csc_mult_component_2.lpm_widtha             = 18,
+    csc_mult_component_2.lpm_widthb             = 18,
+    csc_mult_component_2.lpm_widthp             = 36,
+    csc_mult_component_2.lpm_widths             = 1,
+    csc_mult_component_2.lpm_type               = "LPM_MULT",
+    csc_mult_component_2.lpm_representation     = "SIGNED",
+    csc_mult_component_2.lpm_hint               = "LPM_PIPELINE=1,MAXIMIZE_SPEED=5";
+
+lpm_mult csc_mult_component_3 (
+    // Inputs
+    .dataa  ({{7{Cb[10]}}, Cb}),
+    .datab  (B_Cb_coeff),
+    .aclr   (1'b0),
+    .clken  (csc_enable),
+    .clock  (PCLK_i),
+
+    // Outputs
+    .result (B_Cb_pre),
+    .sum    (1'b0)
+);
+defparam
+    csc_mult_component_3.lpm_widtha             = 18,
+    csc_mult_component_3.lpm_widthb             = 18,
+    csc_mult_component_3.lpm_widthp             = 36,
+    csc_mult_component_3.lpm_widths             = 1,
+    csc_mult_component_3.lpm_type               = "LPM_MULT",
+    csc_mult_component_3.lpm_representation     = "SIGNED",
+    csc_mult_component_3.lpm_hint               = "LPM_PIPELINE=1,MAXIMIZE_SPEED=5";
 
 endmodule
