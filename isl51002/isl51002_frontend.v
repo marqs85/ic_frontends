@@ -126,7 +126,9 @@ always @(posedge PCLK_i) begin
             fid_next_ctr <= fid_next_ctr - 1'b1;
 
         if (fid_next_ctr == 2'h1) begin
-            v_ctr <= 0;
+            // regenerated output timings start lagging by one scanline due to vsync detection,
+            // compensate by starting v_ctr from 1 (effectively reduces V_SYNCLEN by 1)
+            v_ctr <= 1;
             if (~(interlace_flag & (fid_next == FID_EVEN))) begin
                 vmax_ctr <= 0;
                 vtotal <= vmax_ctr + 1'b1;
