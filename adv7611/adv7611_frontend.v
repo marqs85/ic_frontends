@@ -45,6 +45,8 @@ localparam FID_ODD = 1'b1;
 reg HSYNC_i_prev, VSYNC_i_prev, DE_i_prev;
 reg FID_prev;
 
+reg frame_change_raw;
+
 always @(posedge PCLK_i) begin
     R_o <= R_i;
     G_o <= G_i;
@@ -57,18 +59,19 @@ always @(posedge PCLK_i) begin
         if (HSYNC_i_prev & ~HSYNC_i) begin
             FID_o <= FID_ODD;
             interlace_flag <= (FID_o == FID_EVEN);
-            frame_change <= 1'b1;
+            frame_change_raw <= 1'b1;
         end else begin
             FID_o <= FID_EVEN;
             interlace_flag <= (FID_o == FID_ODD);
-            frame_change <= ~interlace_flag;
+            frame_change_raw <= ~interlace_flag;
         end
 
         xpos <= 0;
         ypos <= 0;
     end else begin
         if (HSYNC_i_prev & ~HSYNC_i) begin
-            frame_change <= 1'b0;
+            frame_change <= frame_change_raw;
+            frame_change_raw <= 1'b0;
         end
 
         if (DE_i_prev & ~DE_i) begin
