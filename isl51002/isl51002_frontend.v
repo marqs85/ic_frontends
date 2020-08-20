@@ -36,16 +36,16 @@ module isl51002_frontend (
     input [31:0] hv_in_config,
     input [31:0] hv_in_config2,
     input [31:0] hv_in_config3,
-    output reg [7:0] R_o,
-    output reg [7:0] G_o,
-    output reg [7:0] B_o,
-    output reg HSYNC_o,
-    output reg VSYNC_o,
-    output reg DE_o,
-    output reg FID_o,
+    output [7:0] R_o,
+    output [7:0] G_o,
+    output [7:0] B_o,
+    output HSYNC_o,
+    output VSYNC_o,
+    output DE_o,
+    output FID_o,
     output reg interlace_flag,
-    output reg [10:0] xpos,
-    output reg [10:0] ypos,
+    output [10:0] xpos_o,
+    output [10:0] ypos_o,
     output reg [10:0] vtotal,
     output reg frame_change,
     output reg [19:0] pcnt_frame
@@ -60,19 +60,30 @@ localparam VSYNC_RAW = 1'b1;
 localparam CSC_YCBCR601_RGB = 1'b0;
 localparam CSC_YCBCR709_RGB = 1'b1;
 
-reg [11:0] h_ctr;
-reg [10:0] v_ctr;
-reg [10:0] vmax_ctr;
+localparam PP_PL_START  = 1;
+localparam PP_PL_END    = 4;
+
+reg [11:0] h_cnt;
+reg [10:0] v_cnt;
+reg [10:0] vmax_cnt;
 reg HS_i_prev;
 reg VSYNC_i_np_prev;
 reg [1:0] fid_next_ctr;
 reg fid_next;
+reg [2:0] h_ctr;
 
-reg [7:0] R, G, B;
-reg HSYNC, VSYNC, FID;
+reg [7:0] R_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg [7:0] G_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg [7:0] B_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg HSYNC_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg VSYNC_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg FID_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg DE_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg [10:0] xpos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg [10:0] ypos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 
 // Measurement registers
-reg [19:0] pcnt_ctr;
+reg [19:0] pcnt_cnt;
 reg frame_change_meas_sync1_reg, frame_change_meas_sync2_reg, frame_change_meas_prev;
 wire frame_change_meas = frame_change_meas_sync2_reg;
 
@@ -95,6 +106,11 @@ wire [11:0] even_max_thold = (vs_type == VSYNC_SEPARATED) ? even_max_thold_ss : 
 // TODO: calculate V polarity independently
 wire VSYNC_i_np = (VSYNC_i ^ ~vs_polarity);
 
+// Sample skip for low-res optimized modes
+wire [2:0] H_SKIP = hv_in_config3[27:25];
+wire [2:0] H_SAMPLE_SEL = hv_in_config3[30:28];
+wire DE_sample_sel = (h_ctr == H_SAMPLE_SEL);
+
 // CSC_registers
 reg [10:0] Y;
 reg [10:0] Cb;
@@ -103,7 +119,7 @@ reg [17:0] R_Cr_coeff;
 reg [17:0] G_Cb_coeff;
 reg [17:0] G_Cr_coeff;
 reg [17:0] B_Cb_coeff;
-reg [10:0] Y_1, R_Cr, G_Cb, G_Cr, B_Cb;
+reg [10:0] Y_q, Y_qq, R_Cr, G_Cb, G_Cr, B_Cb;
 reg [7:0] R_csc, G_csc, B_csc;
 
 wire [35:0] R_Cr_pre, G_Cb_pre, G_Cr_pre, B_Cb_pre;
@@ -111,48 +127,57 @@ wire [10:0] R_csc_sum, G_csc_sum, B_csc_sum;
 
 
 always @(posedge PCLK_i) begin
-    R <= R_i;
-    G <= G_i;
-    B <= B_i;
+    R_pp[1] <= R_i;
+    G_pp[1] <= G_i;
+    B_pp[1] <= B_i;
+    DE_pp[1] <= DE_sample_sel & (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
+    xpos_pp[1] <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
+    ypos_pp[1] <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
 
     HS_i_prev <= HS_i;
     VSYNC_i_np_prev <= VSYNC_i_np;
 
     if (HS_i_prev & ~HS_i) begin
+        h_cnt <= 0;
         h_ctr <= 0;
-        HSYNC <= 1'b0;
+        HSYNC_pp[1] <= 1'b0;
 
         if (fid_next_ctr > 0)
             fid_next_ctr <= fid_next_ctr - 1'b1;
 
         if (fid_next_ctr == 2'h1) begin
             // regenerated output timings start lagging by one scanline due to vsync detection,
-            // compensate by starting v_ctr from 1 (effectively reduces V_SYNCLEN by 1)
-            v_ctr <= 1;
+            // compensate by starting v_cnt from 1 (effectively reduces V_SYNCLEN by 1)
+            v_cnt <= 1;
             if (~(interlace_flag & (fid_next == FID_EVEN))) begin
-                vmax_ctr <= 0;
-                vtotal <= vmax_ctr + 1'b1;
+                vmax_cnt <= 0;
+                vtotal <= vmax_cnt + 1'b1;
                 frame_change <= 1'b1;
             end else begin
-                vmax_ctr <= vmax_ctr + 1'b1;
+                vmax_cnt <= vmax_cnt + 1'b1;
             end
         end else begin
-            v_ctr <= v_ctr + 1'b1;
-            vmax_ctr <= vmax_ctr + 1'b1;
+            v_cnt <= v_cnt + 1'b1;
+            vmax_cnt <= vmax_cnt + 1'b1;
             frame_change <= 1'b0;
         end
     end else begin
-        h_ctr <= h_ctr + 1'b1;
-        if (h_ctr == H_SYNCLEN-1)
-            HSYNC <= 1'b1;
+        if (h_ctr == H_SKIP) begin
+            h_cnt <= h_cnt + 1'b1;
+            h_ctr <= 0;
+            if (h_cnt == H_SYNCLEN-1)
+                HSYNC_pp[1] <= 1'b1;
+        end else begin
+            h_ctr <= h_ctr + 1'b1;
+        end
     end
 
     // vsync leading edge processing per quadrant
     if (VSYNC_i_np_prev & ~VSYNC_i_np) begin
-        if (h_ctr < even_min_thold) begin
+        if (h_cnt < even_min_thold) begin
             fid_next <= FID_ODD;
             fid_next_ctr <= 2'h1;
-        end else if (h_ctr > even_max_thold) begin
+        end else if (h_cnt > even_max_thold) begin
             fid_next <= FID_ODD;
             fid_next_ctr <= 2'h2;
         end else begin
@@ -161,38 +186,59 @@ always @(posedge PCLK_i) begin
         end
     end
 
-    if (((fid_next == FID_ODD) & (HS_i_prev & ~HS_i)) | ((fid_next == FID_EVEN) & (h_ctr == (H_TOTAL/2)-1'b1))) begin
+    if (((fid_next == FID_ODD) & (HS_i_prev & ~HS_i)) | ((fid_next == FID_EVEN) & (h_cnt == (H_TOTAL/2)-1'b1))) begin
         if (fid_next_ctr == 2'h1) begin
-            VSYNC <= 1'b0;
-            FID <= fid_next;
-            interlace_flag <= FID ^ fid_next;
+            VSYNC_pp[1] <= 1'b0;
+            FID_pp[1] <= fid_next;
+            interlace_flag <= FID_pp[1] ^ fid_next;
         end else begin
-            if (v_ctr == V_SYNCLEN-1)
-                VSYNC <= 1'b1;
+            if (v_cnt == V_SYNCLEN-1)
+                VSYNC_pp[1] <= 1'b1;
         end
     end
 end
 
+// Pipeline stages 1-
+integer pp_idx;
 always @(posedge PCLK_i) begin
-    R_o <= csc_enable ? R_csc : R;
-    G_o <= csc_enable ? G_csc : G;
-    B_o <= csc_enable ? B_csc : B;
-    HSYNC_o <= HSYNC;
-    VSYNC_o <= VSYNC;
-    FID_o <= FID;
+    for(pp_idx = PP_PL_START+1; pp_idx <= PP_PL_END-1; pp_idx = pp_idx+1) begin
+        R_pp[pp_idx] <= R_pp[pp_idx-1];
+        G_pp[pp_idx] <= G_pp[pp_idx-1];
+        B_pp[pp_idx] <= B_pp[pp_idx-1];
+    end
+    R_pp[PP_PL_END] <= csc_enable ? R_csc : R_pp[PP_PL_END-1];
+    G_pp[PP_PL_END] <= csc_enable ? G_csc : G_pp[PP_PL_END-1];
+    B_pp[PP_PL_END] <= csc_enable ? B_csc : B_pp[PP_PL_END-1];
 
-    DE_o <= (h_ctr >= H_SYNCLEN+H_BACKPORCH) & (h_ctr < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_ctr >= V_SYNCLEN+V_BACKPORCH) & (v_ctr < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
-    xpos <= (h_ctr-H_SYNCLEN-H_BACKPORCH);
-    ypos <= (v_ctr-V_SYNCLEN-V_BACKPORCH);
+    for(pp_idx = PP_PL_START+1; pp_idx <= PP_PL_END; pp_idx = pp_idx+1) begin
+        HSYNC_pp[pp_idx] <= HSYNC_pp[pp_idx-1];
+        VSYNC_pp[pp_idx] <= VSYNC_pp[pp_idx-1];
+        FID_pp[pp_idx] <= FID_pp[pp_idx-1];
+        DE_pp[pp_idx] <= DE_pp[pp_idx-1];
+        xpos_pp[pp_idx] <= xpos_pp[pp_idx-1];
+        ypos_pp[pp_idx] <= ypos_pp[pp_idx-1];
+    end
 end
+
+// Output
+assign R_o = R_pp[PP_PL_END];
+assign G_o = G_pp[PP_PL_END];
+assign B_o = B_pp[PP_PL_END];
+assign HSYNC_o = HSYNC_pp[PP_PL_END];
+assign VSYNC_o = VSYNC_pp[PP_PL_END];
+assign FID_o = FID_pp[PP_PL_END];
+assign DE_o = DE_pp[PP_PL_END];
+assign xpos_o = xpos_pp[PP_PL_END];
+assign ypos_o = ypos_pp[PP_PL_END];
+
 
 //Calculate exact vertical frequency
 always @(posedge CLK_MEAS_i) begin
     if (~frame_change_meas_prev & frame_change_meas) begin
-        pcnt_ctr <= 1;
-        pcnt_frame <= pcnt_ctr;
-    end else if (pcnt_ctr < 20'hfffff) begin
-        pcnt_ctr <= pcnt_ctr + 1'b1;
+        pcnt_cnt <= 1;
+        pcnt_frame <= pcnt_cnt;
+    end else if (pcnt_cnt < 20'hfffff) begin
+        pcnt_cnt <= pcnt_cnt + 1'b1;
     end
 
     frame_change_meas_sync1_reg <= frame_change;
@@ -207,7 +253,8 @@ always @(posedge PCLK_i) begin
         Cb <= {3'b000, B_i} - 11'd128;
         Cr <= {3'b000, R_i} - 11'd128;
 
-        Y_1 <= Y;
+        Y_q <= Y;
+        Y_qq <= Y_q;
         R_Cr <= R_Cr_pre[25:15];
         G_Cb <= G_Cb_pre[25:15];
         G_Cr <= G_Cr_pre[25:15];
@@ -248,9 +295,9 @@ always @(posedge PCLK_i) begin
     end
 end
 
-assign R_csc_sum = Y_1 + R_Cr;
-assign G_csc_sum = Y_1 - G_Cr - G_Cb;
-assign B_csc_sum = Y_1 + B_Cb;
+assign R_csc_sum = Y_qq + R_Cr;
+assign G_csc_sum = Y_qq - G_Cr - G_Cb;
+assign B_csc_sum = Y_qq + B_Cb;
 
 lpm_mult csc_mult_component_0 (
     // Inputs

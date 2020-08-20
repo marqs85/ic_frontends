@@ -34,8 +34,8 @@ module adv7611_frontend (
     output reg DE_o,
     output reg FID_o,
     output reg interlace_flag,
-    output reg [10:0] xpos,
-    output reg [10:0] ypos,
+    output reg [10:0] xpos_o,
+    output reg [10:0] ypos_o,
     output reg frame_change
 );
 
@@ -66,8 +66,8 @@ always @(posedge PCLK_i) begin
             frame_change_raw <= ~interlace_flag;
         end
 
-        xpos <= 0;
-        ypos <= 0;
+        xpos_o <= 0;
+        ypos_o <= 0;
     end else begin
         if (HSYNC_i_prev & ~HSYNC_i) begin
             frame_change <= frame_change_raw;
@@ -75,10 +75,10 @@ always @(posedge PCLK_i) begin
         end
 
         if (DE_i_prev & ~DE_i) begin
-            xpos <= 0;
-            ypos <= ypos + 1'b1;
+            xpos_o <= 0;
+            ypos_o <= ypos_o + 1'b1;
         end else if (DE_i_prev & DE_i) begin
-            xpos <= xpos + 1'b1;
+            xpos_o <= xpos_o + 1'b1;
         end
     end
 
