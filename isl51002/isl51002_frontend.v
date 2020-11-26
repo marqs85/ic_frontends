@@ -70,7 +70,7 @@ reg HS_i_prev;
 reg VSYNC_i_np_prev;
 reg [1:0] fid_next_ctr;
 reg fid_next;
-reg [2:0] h_ctr;
+reg [3:0] h_ctr;
 
 reg [7:0] R_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg [7:0] G_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
@@ -94,7 +94,7 @@ wire [8:0] H_SYNCLEN = hv_in_config2[8:0];
 
 wire [10:0] V_ACTIVE = hv_in_config2[30:20];
 wire [8:0] V_BACKPORCH = hv_in_config3[8:0];
-wire [4:0] V_SYNCLEN = hv_in_config3[13:9];
+wire [3:0] V_SYNCLEN = hv_in_config3[12:9];
 
 wire [11:0] even_min_thold_hv = (H_TOTAL / 12'd4);
 wire [11:0] even_max_thold_hv = (H_TOTAL / 12'd2) + (H_TOTAL / 12'd4);
@@ -107,8 +107,8 @@ wire [11:0] even_max_thold = (vs_type == VSYNC_SEPARATED) ? even_max_thold_ss : 
 wire VSYNC_i_np = (VSYNC_i ^ ~vs_polarity);
 
 // Sample skip for low-res optimized modes
-wire [2:0] H_SKIP = hv_in_config3[27:25];
-wire [2:0] H_SAMPLE_SEL = hv_in_config3[30:28];
+wire [3:0] H_SKIP = hv_in_config3[27:24];
+wire [3:0] H_SAMPLE_SEL = hv_in_config3[31:28];
 wire DE_sample_sel = (h_ctr == H_SAMPLE_SEL);
 
 // CSC_registers
