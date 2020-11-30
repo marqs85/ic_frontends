@@ -25,12 +25,14 @@ module isl51002_frontend (
     input [7:0] G_i,
     input [7:0] B_i,
     input HS_i,
+    input VS_i,
     input HSYNC_i,
     input VSYNC_i,
     input DE_i,
     input FID_i,
-    input vs_type,
-    input vs_polarity,
+    input hsync_i_polarity,
+    input vsync_i_polarity,
+    input vsync_i_type,
     input csc_enable,
     input csc_cs,
     input [31:0] hv_in_config,
@@ -66,8 +68,8 @@ localparam PP_PL_END    = 4;
 reg [11:0] h_cnt;
 reg [10:0] v_cnt;
 reg [10:0] vmax_cnt;
-reg HS_i_prev;
-reg VSYNC_i_np_prev;
+reg HS_i_prev, VS_i_np_prev;
+reg HSYNC_i_np_prev, VSYNC_i_np_prev;
 reg [1:0] fid_next_ctr;
 reg fid_next;
 reg [3:0] h_ctr;
@@ -83,9 +85,11 @@ reg [10:0] xpos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg [10:0] ypos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 
 // Measurement registers
-reg [19:0] pcnt_cnt;
-reg frame_change_meas_sync1_reg, frame_change_meas_sync2_reg, frame_change_meas_prev;
-wire frame_change_meas = frame_change_meas_sync2_reg;
+reg [19:0] pcnt_frame_ctr;
+reg [11:0] pcnt_line, pcnt_line_ctr, meas_h_cnt;
+reg pcnt_line_stored;
+reg [10:0] meas_v_cnt;
+reg meas_hl_det, meas_fid;
 
 wire [11:0] H_TOTAL = hv_in_config[11:0];
 wire [10:0] H_ACTIVE = hv_in_config[22:12];
@@ -100,11 +104,16 @@ wire [11:0] even_min_thold_hv = (H_TOTAL / 12'd4);
 wire [11:0] even_max_thold_hv = (H_TOTAL / 12'd2) + (H_TOTAL / 12'd4);
 wire [11:0] even_min_thold_ss = (H_TOTAL / 12'd2);
 wire [11:0] even_max_thold_ss = H_TOTAL;
-wire [11:0] even_min_thold = (vs_type == VSYNC_SEPARATED) ? even_min_thold_ss : even_min_thold_hv;
-wire [11:0] even_max_thold = (vs_type == VSYNC_SEPARATED) ? even_max_thold_ss : even_max_thold_hv;
+wire [11:0] even_min_thold = (vsync_i_type == VSYNC_SEPARATED) ? even_min_thold_ss : even_min_thold_hv;
+wire [11:0] even_max_thold = (vsync_i_type == VSYNC_SEPARATED) ? even_max_thold_ss : even_max_thold_hv;
 
-// TODO: calculate V polarity independently
-wire VSYNC_i_np = (VSYNC_i ^ ~vs_polarity);
+wire [11:0] meas_even_min_thold = (vsync_i_type == VSYNC_SEPARATED) ? (pcnt_line / 12'd2) : (pcnt_line / 12'd4);
+wire [11:0] meas_even_max_thold = (vsync_i_type == VSYNC_SEPARATED) ? pcnt_line : (pcnt_line / 12'd2) + (pcnt_line / 12'd4);
+
+// TODO: calculate H/V polarity independently
+wire VS_i_np = (VS_i ^ ~vsync_i_polarity);
+wire VSYNC_i_np = (VSYNC_i ^ ~vsync_i_polarity);
+wire HSYNC_i_np = (HSYNC_i ^ ~hsync_i_polarity);
 
 // Sample skip for low-res optimized modes
 wire [3:0] H_SKIP = hv_in_config3[27:24];
@@ -135,7 +144,7 @@ always @(posedge PCLK_i) begin
     ypos_pp[1] <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
 
     HS_i_prev <= HS_i;
-    VSYNC_i_np_prev <= VSYNC_i_np;
+    VS_i_np_prev <= VS_i_np;
 
     if (HS_i_prev & ~HS_i) begin
         h_cnt <= 0;
@@ -151,7 +160,7 @@ always @(posedge PCLK_i) begin
             v_cnt <= 1;
             if (~(interlace_flag & (fid_next == FID_EVEN))) begin
                 vmax_cnt <= 0;
-                vtotal <= vmax_cnt + 1'b1;
+                //vtotal <= vmax_cnt + 1'b1;
                 frame_change <= 1'b1;
             end else begin
                 vmax_cnt <= vmax_cnt + 1'b1;
@@ -173,7 +182,7 @@ always @(posedge PCLK_i) begin
     end
 
     // vsync leading edge processing per quadrant
-    if (VSYNC_i_np_prev & ~VSYNC_i_np) begin
+    if (VS_i_np_prev & ~VS_i_np) begin
         if (h_cnt < even_min_thold) begin
             fid_next <= FID_ODD;
             fid_next_ctr <= 2'h1;
@@ -190,7 +199,7 @@ always @(posedge PCLK_i) begin
         if (fid_next_ctr == 2'h1) begin
             VSYNC_pp[1] <= 1'b0;
             FID_pp[1] <= fid_next;
-            interlace_flag <= FID_pp[1] ^ fid_next;
+            //interlace_flag <= FID_pp[1] ^ fid_next;
         end else begin
             if (v_cnt == V_SYNCLEN-1)
                 VSYNC_pp[1] <= 1'b1;
@@ -232,18 +241,89 @@ assign xpos_o = xpos_pp[PP_PL_END];
 assign ypos_o = ypos_pp[PP_PL_END];
 
 
-//Calculate exact vertical frequency
+// Calculate horizontal and vertical counts
 always @(posedge CLK_MEAS_i) begin
-    if (~frame_change_meas_prev & frame_change_meas) begin
-        pcnt_cnt <= 1;
-        pcnt_frame <= pcnt_cnt;
-    end else if (pcnt_cnt < 20'hfffff) begin
-        pcnt_cnt <= pcnt_cnt + 1'b1;
+    if (VSYNC_i_np_prev & ~VSYNC_i_np) begin
+        pcnt_frame_ctr <= 1;
+        pcnt_line_stored <= 1'b0;
+        pcnt_frame <= pcnt_frame_ctr;
+    end else if (pcnt_frame_ctr < 20'hfffff) begin
+        pcnt_frame_ctr <= pcnt_frame_ctr + 1'b1;
     end
 
-    frame_change_meas_sync1_reg <= frame_change;
-    frame_change_meas_sync2_reg <= frame_change_meas_sync1_reg;
-    frame_change_meas_prev <= frame_change_meas;
+    if (HSYNC_i_np_prev & ~HSYNC_i_np) begin
+        pcnt_line_ctr <= 1;
+
+        // store count 1ms after vsync
+        if (~pcnt_line_stored & (pcnt_frame_ctr > 20'd27000)) begin
+            pcnt_line <= pcnt_line_ctr;
+            pcnt_line_stored <= 1'b1;
+        end
+    end else begin
+        pcnt_line_ctr <= pcnt_line_ctr + 1'b1;
+    end
+
+    HSYNC_i_np_prev <= HSYNC_i_np;
+    VSYNC_i_np_prev <= VSYNC_i_np;
+end
+
+// Detect interlace and line count
+always @(posedge CLK_MEAS_i) begin
+    if ((HSYNC_i_np_prev & ~HSYNC_i_np) & (meas_h_cnt > (pcnt_line/8))) begin
+        // detect half-line equalization pulses
+        if ((meas_h_cnt > ((pcnt_line/2) - (pcnt_line/4))) && (meas_h_cnt < ((pcnt_line/2) + (pcnt_line/4)))) begin
+            if (meas_hl_det) begin
+                meas_hl_det <= 1'b0;
+                meas_h_cnt <= 0;
+                meas_v_cnt <= meas_v_cnt + 1'b1;
+            end else begin
+                meas_hl_det <= 1'b1;
+                meas_h_cnt <= meas_h_cnt + 1'b1;
+            end
+        end else begin
+            meas_hl_det <= 1'b0;
+            meas_h_cnt <= 0;
+            meas_v_cnt <= meas_v_cnt + 1'b1;
+        end
+    end else if (((pcnt_frame_ctr < (pcnt_frame/8)) | (pcnt_frame_ctr > (pcnt_frame - (pcnt_frame/8)))) & (meas_h_cnt > pcnt_line)) begin
+        // hsync may be missing during vblank, force line change detect if pcnt_line is exceeded +-1/8 field around vsync edge
+        meas_hl_det <= 1'b0;
+        meas_h_cnt <= 0;
+        meas_v_cnt <= meas_v_cnt + 1'b1;
+    end else begin
+        meas_h_cnt <= meas_h_cnt + 1'b1;
+    end
+
+    if (VSYNC_i_np_prev & ~VSYNC_i_np) begin
+        if ((meas_h_cnt < meas_even_min_thold) | (meas_h_cnt > meas_even_max_thold)) begin
+            meas_fid <= FID_ODD;
+            interlace_flag <= (meas_fid == FID_EVEN);
+
+            if (vsync_i_type == VSYNC_RAW) begin
+                // vsync leading edge may occur at hsync edge or either side of it
+                if ((HSYNC_i_np_prev & ~HSYNC_i_np) | (meas_h_cnt > pcnt_line)) begin
+                    meas_v_cnt <= 1;
+                    vtotal <= meas_v_cnt;
+                end else if (meas_h_cnt < meas_even_min_thold) begin
+                    meas_v_cnt <= 1;
+                    vtotal <= meas_v_cnt - 1'b1;
+                end else begin
+                    meas_v_cnt <= 0;
+                    vtotal <= meas_v_cnt;
+                end
+            end else begin
+                meas_v_cnt <= 0;
+                vtotal <= meas_v_cnt;
+            end
+        end else begin
+            meas_fid <= FID_EVEN;
+            interlace_flag <= (meas_fid == FID_ODD);
+            if (meas_fid == FID_EVEN) begin
+                meas_v_cnt <= 0;
+                vtotal <= meas_v_cnt;
+            end
+        end
+    end
 end
 
 // CSC
