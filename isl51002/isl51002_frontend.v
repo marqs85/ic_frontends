@@ -92,13 +92,13 @@ reg [10:0] meas_v_cnt;
 reg meas_hl_det, meas_fid;
 
 wire [11:0] H_TOTAL = hv_in_config[11:0];
-wire [10:0] H_ACTIVE = hv_in_config[22:12];
-wire [8:0] H_BACKPORCH = hv_in_config[31:23];
-wire [8:0] H_SYNCLEN = hv_in_config2[8:0];
+wire [11:0] H_ACTIVE = hv_in_config[23:12];
+wire [7:0] H_SYNCLEN = hv_in_config[31:24];
+wire [8:0] H_BACKPORCH = hv_in_config2[8:0];
 
 wire [10:0] V_ACTIVE = hv_in_config2[30:20];
-wire [8:0] V_BACKPORCH = hv_in_config3[8:0];
-wire [3:0] V_SYNCLEN = hv_in_config3[12:9];
+wire [3:0] V_SYNCLEN = hv_in_config3[3:0];
+wire [8:0] V_BACKPORCH = hv_in_config3[12:4];
 
 wire [11:0] even_min_thold_hv = (H_TOTAL / 12'd4);
 wire [11:0] even_max_thold_hv = (H_TOTAL / 12'd2) + (H_TOTAL / 12'd4);
