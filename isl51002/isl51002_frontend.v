@@ -50,6 +50,7 @@ module isl51002_frontend (
     output [10:0] ypos_o,
     output reg [10:0] vtotal,
     output reg frame_change,
+    output reg sof_scaler,
     output reg [19:0] pcnt_frame
 );
 
@@ -120,6 +121,9 @@ wire [3:0] H_SKIP = hv_in_config3[27:24];
 wire [3:0] H_SAMPLE_SEL = hv_in_config3[31:28];
 wire DE_sample_sel = (h_ctr == H_SAMPLE_SEL);
 
+// SOF position for scaler
+wire [10:0] V_SOF_LINE = hv_in_config3[23:13];
+
 // CSC_registers
 reg [10:0] Y;
 reg [10:0] Cb;
@@ -170,6 +174,8 @@ always @(posedge PCLK_i) begin
             vmax_cnt <= vmax_cnt + 1'b1;
             frame_change <= 1'b0;
         end
+
+        sof_scaler <= (vmax_cnt == V_SOF_LINE);
     end else begin
         if (h_ctr == H_SKIP) begin
             h_cnt <= h_cnt + 1'b1;

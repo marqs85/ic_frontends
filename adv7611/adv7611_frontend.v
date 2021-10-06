@@ -26,6 +26,9 @@ module adv7611_frontend (
     input HSYNC_i,
     input VSYNC_i,
     input DE_i,
+    input [31:0] hv_in_config,
+    input [31:0] hv_in_config2,
+    input [31:0] hv_in_config3,
     output reg [7:0] R_o,
     output reg [7:0] G_o,
     output reg [7:0] B_o,
@@ -36,7 +39,8 @@ module adv7611_frontend (
     output reg interlace_flag,
     output reg [10:0] xpos_o,
     output reg [10:0] ypos_o,
-    output reg frame_change
+    output reg frame_change,
+    output reg sof_scaler
 );
 
 localparam FID_EVEN = 1'b0;
@@ -45,7 +49,11 @@ localparam FID_ODD = 1'b1;
 reg HSYNC_i_prev, VSYNC_i_prev, DE_i_prev;
 reg FID_prev;
 
+reg [10:0] vmax_cnt;
 reg frame_change_raw;
+
+// SOF position for scaler
+wire [10:0] V_SOF_LINE = hv_in_config3[23:13];
 
 always @(posedge PCLK_i) begin
     R_o <= R_i;
@@ -60,6 +68,7 @@ always @(posedge PCLK_i) begin
             FID_o <= FID_ODD;
             interlace_flag <= (FID_o == FID_EVEN);
             frame_change_raw <= 1'b1;
+            vmax_cnt <= 0;
         end else begin
             FID_o <= FID_EVEN;
             interlace_flag <= (FID_o == FID_ODD);
@@ -72,6 +81,8 @@ always @(posedge PCLK_i) begin
         if (HSYNC_i_prev & ~HSYNC_i) begin
             frame_change <= frame_change_raw;
             frame_change_raw <= 1'b0;
+            vmax_cnt <= vmax_cnt + 1'b1;
+            sof_scaler <= (vmax_cnt == V_SOF_LINE);
         end
 
         if (DE_i_prev & ~DE_i) begin
