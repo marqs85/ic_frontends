@@ -29,6 +29,7 @@ module adv7611_frontend (
     input [31:0] hv_in_config,
     input [31:0] hv_in_config2,
     input [31:0] hv_in_config3,
+    input sync_passthru,
     output reg [7:0] R_o,
     output reg [7:0] G_o,
     output reg [7:0] B_o,
@@ -49,30 +50,38 @@ localparam FID_ODD = 1'b1;
 reg HSYNC_i_prev, VSYNC_i_prev, DE_i_prev;
 reg FID_prev;
 
+reg [11:0] h_cnt;
+reg [10:0] v_cnt;
 reg [10:0] vmax_cnt;
 reg frame_change_raw;
+
+reg [7:0] R_i_prev, G_i_prev, B_i_prev;
+
+wire [11:0] H_ACTIVE = hv_in_config[23:12];
+wire [7:0] H_SYNCLEN = hv_in_config[31:24];
+wire [8:0] H_BACKPORCH = hv_in_config2[8:0];
+
+wire [10:0] V_ACTIVE = hv_in_config2[30:20];
+wire [3:0] V_SYNCLEN = hv_in_config3[3:0];
+wire [8:0] V_BACKPORCH = hv_in_config3[12:4];
 
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[23:13];
 
 always @(posedge PCLK_i) begin
-    R_o <= R_i;
-    G_o <= G_i;
-    B_o <= B_i;
-    HSYNC_o <= HSYNC_i;
-    VSYNC_o <= VSYNC_i;
-    DE_o <= DE_i;
-
     if (VSYNC_i_prev & ~VSYNC_i) begin
         if (HSYNC_i_prev & ~HSYNC_i) begin
             FID_o <= FID_ODD;
             interlace_flag <= (FID_o == FID_EVEN);
             frame_change_raw <= 1'b1;
+            h_cnt <= 0;
+            v_cnt <= 0;
             vmax_cnt <= 0;
         end else begin
             FID_o <= FID_EVEN;
             interlace_flag <= (FID_o == FID_ODD);
             frame_change_raw <= ~interlace_flag;
+            v_cnt <= -1;
         end
 
         xpos_o <= 0;
@@ -81,8 +90,12 @@ always @(posedge PCLK_i) begin
         if (HSYNC_i_prev & ~HSYNC_i) begin
             frame_change <= frame_change_raw;
             frame_change_raw <= 1'b0;
+            h_cnt <= 0;
+            v_cnt <= v_cnt + 1'b1;
             vmax_cnt <= vmax_cnt + 1'b1;
             sof_scaler <= (vmax_cnt == V_SOF_LINE);
+        end else begin
+            h_cnt <= h_cnt + 1'b1;
         end
 
         if (DE_i_prev & ~DE_i) begin
@@ -93,6 +106,27 @@ always @(posedge PCLK_i) begin
         end
     end
 
+    if (sync_passthru) begin
+        R_o <= R_i;
+        G_o <= G_i;
+        B_o <= B_i;
+        HSYNC_o <= HSYNC_i;
+        VSYNC_o <= VSYNC_i;
+        DE_o <= DE_i;
+    end else begin
+        R_o <= R_i_prev;
+        G_o <= G_i_prev;
+        B_o <= B_i_prev;
+        HSYNC_o <= (h_cnt < H_SYNCLEN) ? 1'b0 : 1'b1;
+        VSYNC_o <= (v_cnt < V_SYNCLEN) ? 1'b0 : 1'b1;
+        DE_o <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
+        xpos_o <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
+        ypos_o <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
+    end
+
+    R_i_prev <= R_i;
+    G_i_prev <= G_i;
+    B_i_prev <= B_i;
     HSYNC_i_prev <= HSYNC_i;
     VSYNC_i_prev <= VSYNC_i;
     DE_i_prev <= DE_i;
