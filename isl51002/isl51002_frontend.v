@@ -86,7 +86,7 @@ reg [10:0] xpos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg [10:0] ypos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 
 // Measurement registers
-reg [19:0] pcnt_frame_ctr;
+reg [20:0] pcnt_frame_ctr;
 reg [11:0] pcnt_line, pcnt_line_ctr, meas_h_cnt;
 reg pcnt_line_stored;
 reg [10:0] meas_v_cnt;
@@ -192,7 +192,7 @@ always @(posedge PCLK_i) begin
         if (h_cnt < even_min_thold) begin
             fid_next <= FID_ODD;
             fid_next_ctr <= 2'h1;
-        end else if (h_cnt > even_max_thold) begin
+        end else if ((h_cnt > even_max_thold) | ~interlace_flag) begin
             fid_next <= FID_ODD;
             fid_next_ctr <= 2'h2;
         end else begin
@@ -249,11 +249,11 @@ assign ypos_o = ypos_pp[PP_PL_END];
 
 // Calculate horizontal and vertical counts
 always @(posedge CLK_MEAS_i) begin
-    if (VSYNC_i_np_prev & ~VSYNC_i_np) begin
+    if ((VSYNC_i_np_prev & ~VSYNC_i_np) & (~interlace_flag | (meas_fid == FID_EVEN))) begin
         pcnt_frame_ctr <= 1;
         pcnt_line_stored <= 1'b0;
-        pcnt_frame <= pcnt_frame_ctr;
-    end else if (pcnt_frame_ctr < 20'hfffff) begin
+        pcnt_frame <= interlace_flag ? (pcnt_frame_ctr>>1) : pcnt_frame_ctr[19:0];
+    end else if (pcnt_frame_ctr < 21'h1fffff) begin
         pcnt_frame_ctr <= pcnt_frame_ctr + 1'b1;
     end
 
@@ -261,7 +261,7 @@ always @(posedge CLK_MEAS_i) begin
         pcnt_line_ctr <= 1;
 
         // store count 1ms after vsync
-        if (~pcnt_line_stored & (pcnt_frame_ctr > 20'd27000)) begin
+        if (~pcnt_line_stored & (pcnt_frame_ctr > 21'd27000)) begin
             pcnt_line <= pcnt_line_ctr;
             pcnt_line_stored <= 1'b1;
         end
