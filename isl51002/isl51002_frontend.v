@@ -46,6 +46,7 @@ module isl51002_frontend (
     output DE_o,
     output FID_o,
     output reg interlace_flag,
+    output datavalid_o,
     output [10:0] xpos_o,
     output [10:0] ypos_o,
     output reg [10:0] vtotal,
@@ -82,6 +83,7 @@ reg HSYNC_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg VSYNC_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg FID_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg DE_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg datavalid_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg [10:0] xpos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg [10:0] ypos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 
@@ -119,7 +121,6 @@ wire HSYNC_i_np = (HSYNC_i ^ ~hsync_i_polarity);
 // Sample skip for low-res optimized modes
 wire [3:0] H_SKIP = hv_in_config3[27:24];
 wire [3:0] H_SAMPLE_SEL = hv_in_config3[31:28];
-wire DE_sample_sel = (h_ctr == H_SAMPLE_SEL);
 
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[23:13];
@@ -143,7 +144,8 @@ always @(posedge PCLK_i) begin
     R_pp[1] <= R_i;
     G_pp[1] <= G_i;
     B_pp[1] <= B_i;
-    DE_pp[1] <= DE_sample_sel & (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
+    DE_pp[1] <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
+    datavalid_pp[1] <= (h_ctr == H_SAMPLE_SEL);
     xpos_pp[1] <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
     ypos_pp[1] <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
 
@@ -230,6 +232,7 @@ always @(posedge PCLK_i) begin
         VSYNC_pp[pp_idx] <= VSYNC_pp[pp_idx-1];
         FID_pp[pp_idx] <= FID_pp[pp_idx-1];
         DE_pp[pp_idx] <= DE_pp[pp_idx-1];
+        datavalid_pp[pp_idx] <= datavalid_pp[pp_idx-1];
         xpos_pp[pp_idx] <= xpos_pp[pp_idx-1];
         ypos_pp[pp_idx] <= ypos_pp[pp_idx-1];
     end
@@ -243,6 +246,7 @@ assign HSYNC_o = HSYNC_pp[PP_PL_END];
 assign VSYNC_o = VSYNC_pp[PP_PL_END];
 assign FID_o = FID_pp[PP_PL_END];
 assign DE_o = DE_pp[PP_PL_END];
+assign datavalid_o = datavalid_pp[PP_PL_END];
 assign xpos_o = xpos_pp[PP_PL_END];
 assign ypos_o = ypos_pp[PP_PL_END];
 
