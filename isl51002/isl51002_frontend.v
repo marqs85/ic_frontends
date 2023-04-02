@@ -113,6 +113,9 @@ wire [11:0] even_max_thold = (vsync_i_type == VSYNC_SEPARATED) ? even_max_thold_
 wire [11:0] meas_even_min_thold = (vsync_i_type == VSYNC_SEPARATED) ? (pcnt_line / 12'd2) : (pcnt_line / 12'd4);
 wire [11:0] meas_even_max_thold = (vsync_i_type == VSYNC_SEPARATED) ? pcnt_line : (pcnt_line / 12'd2) + (pcnt_line / 12'd4);
 
+wire meas_vblank_region = ((pcnt_frame_ctr < (pcnt_frame/8)) | (pcnt_frame_ctr > (pcnt_frame - (pcnt_frame/8))));
+wire [11:0] glitch_filt_thold = meas_vblank_region ? (pcnt_line/4) : (pcnt_line/8);
+
 // TODO: calculate H/V polarity independently
 wire VS_i_np = (VS_i ^ ~vsync_i_polarity);
 wire VSYNC_i_np = (VSYNC_i ^ ~vsync_i_polarity);
@@ -279,7 +282,7 @@ end
 
 // Detect interlace and line count
 always @(posedge CLK_MEAS_i) begin
-    if ((HSYNC_i_np_prev & ~HSYNC_i_np) & (meas_h_cnt > (pcnt_line/8))) begin
+    if ((HSYNC_i_np_prev & ~HSYNC_i_np) & (meas_h_cnt > glitch_filt_thold)) begin
         // detect half-line equalization pulses
         if ((meas_h_cnt > ((pcnt_line/2) - (pcnt_line/4))) && (meas_h_cnt < ((pcnt_line/2) + (pcnt_line/4)))) begin
             if (meas_hl_det) begin
@@ -295,7 +298,7 @@ always @(posedge CLK_MEAS_i) begin
             meas_h_cnt <= 0;
             meas_v_cnt <= meas_v_cnt + 1'b1;
         end
-    end else if (((pcnt_frame_ctr < (pcnt_frame/8)) | (pcnt_frame_ctr > (pcnt_frame - (pcnt_frame/8)))) & (meas_h_cnt > pcnt_line)) begin
+    end else if (meas_vblank_region & (meas_h_cnt > pcnt_line)) begin
         // hsync may be missing during vblank, force line change detect if pcnt_line is exceeded +-1/8 field around vsync edge
         meas_hl_det <= 1'b0;
         meas_h_cnt <= 0;
