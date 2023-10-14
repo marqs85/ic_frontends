@@ -111,9 +111,9 @@ wire [11:0] H_ACTIVE = hv_in_config[23:12];
 wire [7:0] H_SYNCLEN = hv_in_config[31:24];
 wire [8:0] H_BACKPORCH = hv_in_config2[8:0];
 
-wire [10:0] V_ACTIVE = hv_in_config2[30:20];
-wire [3:0] V_SYNCLEN = hv_in_config3[3:0];
-wire [8:0] V_BACKPORCH = hv_in_config3[12:4];
+wire [10:0] V_ACTIVE = hv_in_config3[11:0];
+wire [3:0] V_SYNCLEN = hv_in_config3[15:12];
+wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 
 wire [5:0] MISC_REV_LPF_STR = (misc_config[11:7] + 6'd16);
 wire MISC_REV_LPF_ENABLE = (misc_config[11:7] != 5'h0);
@@ -137,11 +137,11 @@ wire VSYNC_i_np = (VSYNC_i ^ ~vsync_i_polarity);
 wire HSYNC_i_np = (HSYNC_i ^ ~hsync_i_polarity);
 
 // Sample skip for low-res optimized modes
-wire [3:0] H_SKIP = hv_in_config3[27:24];
-wire [3:0] H_SAMPLE_SEL = hv_in_config3[31:28];
+wire [3:0] H_SKIP = hv_in_config2[12:9];
+wire [3:0] H_SAMPLE_SEL = hv_in_config2[16:13];
 
 // SOF position for scaler
-wire [10:0] V_SOF_LINE = hv_in_config3[23:13];
+wire [10:0] V_SOF_LINE = hv_in_config3[31:20];
 
 // CSC_registers
 reg [10:0] Y;
