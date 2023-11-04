@@ -66,7 +66,7 @@ wire [3:0] V_SYNCLEN = hv_in_config3[15:12];
 wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 
 // SOF position for scaler
-wire [10:0] V_SOF_LINE = hv_in_config3[31:20];
+wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
 
 always @(posedge PCLK_i) begin
     if (VSYNC_i_prev & ~VSYNC_i) begin

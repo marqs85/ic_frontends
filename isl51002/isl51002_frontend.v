@@ -141,7 +141,7 @@ wire [3:0] H_SKIP = hv_in_config2[12:9];
 wire [3:0] H_SAMPLE_SEL = hv_in_config2[16:13];
 
 // SOF position for scaler
-wire [10:0] V_SOF_LINE = hv_in_config3[31:20];
+wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
 
 // CSC_registers
 reg [10:0] Y;
