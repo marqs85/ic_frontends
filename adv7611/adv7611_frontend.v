@@ -38,6 +38,7 @@ module adv7611_frontend (
     output reg DE_o,
     output reg FID_o,
     output reg interlace_flag,
+    output reg datavalid_o,
     output reg [10:0] xpos_o,
     output reg [10:0] ypos_o,
     output reg frame_change,
@@ -53,6 +54,7 @@ reg FID_prev;
 reg [11:0] h_cnt;
 reg [10:0] v_cnt;
 reg [10:0] vmax_cnt;
+reg [3:0] h_ctr;
 reg frame_change_raw;
 
 reg [7:0] R_i_prev, G_i_prev, B_i_prev;
@@ -65,6 +67,10 @@ wire [10:0] V_ACTIVE = hv_in_config3[11:0];
 wire [3:0] V_SYNCLEN = hv_in_config3[15:12];
 wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 
+// Sample skip for low-res modes
+wire [3:0] H_SKIP = hv_in_config2[12:9];
+wire [3:0] H_SAMPLE_SEL = '0;
+
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
 
@@ -75,12 +81,19 @@ always @(posedge PCLK_i) begin
             interlace_flag <= (FID_o == FID_EVEN);
             frame_change_raw <= 1'b1;
             h_cnt <= 0;
+            h_ctr <= 0;
             v_cnt <= 0;
             vmax_cnt <= 0;
         end else begin
             FID_o <= FID_EVEN;
             interlace_flag <= (FID_o == FID_ODD);
             frame_change_raw <= ~interlace_flag;
+            if (h_ctr == H_SKIP) begin
+                h_cnt <= h_cnt + 1'b1;
+                h_ctr <= 0;
+            end else begin
+                h_ctr <= h_ctr + 1'b1;
+            end
             v_cnt <= -1;
         end
 
@@ -91,11 +104,17 @@ always @(posedge PCLK_i) begin
             frame_change <= frame_change_raw;
             frame_change_raw <= 1'b0;
             h_cnt <= 0;
+            h_ctr <= 0;
             v_cnt <= v_cnt + 1'b1;
             vmax_cnt <= vmax_cnt + 1'b1;
             sof_scaler <= (vmax_cnt == V_SOF_LINE);
         end else begin
-            h_cnt <= h_cnt + 1'b1;
+            if (h_ctr == H_SKIP) begin
+                h_cnt <= h_cnt + 1'b1;
+                h_ctr <= 0;
+            end else begin
+                h_ctr <= h_ctr + 1'b1;
+            end
         end
 
         if (DE_i_prev & ~DE_i) begin
@@ -113,6 +132,7 @@ always @(posedge PCLK_i) begin
         HSYNC_o <= HSYNC_i;
         VSYNC_o <= VSYNC_i;
         DE_o <= DE_i;
+        datavalid_o <= 1'b1;
     end else begin
         R_o <= R_i_prev;
         G_o <= G_i_prev;
@@ -122,6 +142,7 @@ always @(posedge PCLK_i) begin
         DE_o <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
         xpos_o <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
         ypos_o <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
+        datavalid_o <= (h_ctr == H_SAMPLE_SEL);
     end
 
     R_i_prev <= R_i;
