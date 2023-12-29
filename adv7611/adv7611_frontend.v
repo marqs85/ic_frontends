@@ -54,7 +54,7 @@ reg FID_prev;
 reg [11:0] h_cnt;
 reg [10:0] v_cnt;
 reg [10:0] vmax_cnt;
-reg [3:0] h_ctr;
+reg [4:0] h_ctr;
 reg frame_change_raw;
 
 reg [7:0] R_i_prev, G_i_prev, B_i_prev;
@@ -68,8 +68,8 @@ wire [3:0] V_SYNCLEN = hv_in_config3[15:12];
 wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 
 // Sample skip for low-res modes
-wire [3:0] H_SKIP = hv_in_config2[12:9];
-wire [3:0] H_SAMPLE_SEL = '0;
+wire [4:0] H_SKIP = hv_in_config2[13:9];
+wire [4:0] H_SAMPLE_SEL = '0;
 
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[27:16];

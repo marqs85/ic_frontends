@@ -139,7 +139,7 @@ wire HSYNC_i_np = (HSYNC_i ^ ~hsync_i_polarity);
 
 // Sample skip for low-res optimized modes
 wire [3:0] H_SKIP = hv_in_config2[12:9];
-wire [3:0] H_SAMPLE_SEL = hv_in_config2[16:13];
+wire [3:0] H_SAMPLE_SEL = hv_in_config2[17:14];
 
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
