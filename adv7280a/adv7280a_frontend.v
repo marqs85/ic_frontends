@@ -95,9 +95,10 @@ always @(posedge PCLK_i) begin
         h_ctr <= 0;
         EAV_prev <= EAV;
 
+        // Detect field change when V bit goes from 0 to 1 (where F-bit indicated previously rendered field)
         if (~EAV_prev[5] & EAV[5]) begin
             FID_pp[1] <= EAV[6];
-            interlace_flag <= (EAV[6] != FID_o);
+            interlace_flag <= (EAV[6] != FID_pp[1]);
 
             if (~interlace_flag | (EAV[6] == 1'b1)) begin
                 frame_change_raw <= 1'b1;
@@ -123,7 +124,7 @@ always @(posedge PCLK_i) begin
 
     HSYNC_pp[2] <= (h_cnt < H_SYNCLEN) ? 1'b0 : 1'b1;
     VSYNC_pp[2] <= (v_cnt < V_SYNCLEN) ? 1'b0 : 1'b1;
-    FID_pp[2] <= FID_pp[1];
+    FID_pp[2] <= interlace_flag ? FID_pp[1] : FID_ODD;
     DE_pp[2] <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
 
     HS_i_prev <= HS_i;
@@ -187,7 +188,7 @@ always @(posedge PCLK_i) begin
         B_csc <= B_csc_sum[7:0];
 
     xpos_o <= (h_cnt-H_SYNCLEN-H_BACKPORCH-2);
-    ypos_o <= (v_cnt-V_SYNCLEN-V_BACKPORCH-2);
+    ypos_o <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
     datavalid_o <= ~h_ctr[0];
 end
 
