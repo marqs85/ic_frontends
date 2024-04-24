@@ -52,6 +52,7 @@ localparam PP_PL_END        = 6;
 
 reg HS_i_prev, VS_i_prev;
 reg [7:0] EAV, EAV_prev;
+reg ntscmode;
 
 reg [11:0] h_cnt;
 reg [10:0] v_cnt;
@@ -97,10 +98,12 @@ always @(posedge PCLK_i) begin
 
         // Detect field change when V bit goes from 0 to 1 (where F-bit indicated previously rendered field)
         if (~EAV_prev[5] & EAV[5]) begin
-            FID_pp[1] <= EAV[6];
-            interlace_flag <= (EAV[6] != FID_pp[1]);
+            // Must invert field order for NTSC (issue with NEWAVMODE=0 ?)
+            FID_pp[1] <= EAV[6] ^ ntscmode;
+            ntscmode <= (h_cnt < 860);
+            interlace_flag <= ((EAV[6] ^ ntscmode) != FID_pp[1]);
 
-            if (~interlace_flag | (EAV[6] == 1'b1)) begin
+            if (~interlace_flag | ((EAV[6] ^ ntscmode) == 1'b1)) begin
                 frame_change_raw <= 1'b1;
                 v_cnt <= 0;
                 vmax_cnt <= 0;
