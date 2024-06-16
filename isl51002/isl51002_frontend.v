@@ -221,7 +221,7 @@ always @(posedge PCLK_i) begin
 
     // vsync leading edge processing per quadrant
     if (VS_i_np_prev & ~VS_i_np) begin
-        if (h_cnt < even_min_thold) begin
+        if ((HS_i_prev & ~HS_i) | (h_cnt < even_min_thold)) begin
             fid_next <= FID_ODD;
             fid_next_ctr <= 2'h1;
         end else if ((h_cnt > even_max_thold) | ~interlace_flag) begin
