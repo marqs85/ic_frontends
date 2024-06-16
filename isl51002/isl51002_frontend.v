@@ -66,6 +66,9 @@ localparam CSC_YCBCR601_RGB = 1'b0;
 localparam CSC_YCBCR709_RGB = 1'b1;
 
 localparam PP_PL_START      = 1;
+localparam PP_DE_POS_START  = PP_PL_START;
+localparam PP_DE_POS_LENGTH = 1;
+localparam PP_DE_POS_END    = PP_DE_POS_START + PP_DE_POS_LENGTH;
 localparam PP_CSC_START     = 0;
 localparam PP_CSC_LENGTH    = 5;
 localparam PP_CSC_END       = PP_CSC_START + PP_CSC_LENGTH;
@@ -89,10 +92,10 @@ reg [7:0] B_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg HSYNC_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg VSYNC_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
 reg FID_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
-reg DE_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
-reg datavalid_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
-reg [10:0] xpos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
-reg [10:0] ypos_pp[PP_PL_START:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg DE_pp[PP_DE_POS_END:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg datavalid_pp[PP_DE_POS_END:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg [10:0] xpos_pp[PP_DE_POS_END:PP_PL_END] /* synthesis ramstyle = "logic" */;
+reg [10:0] ypos_pp[PP_DE_POS_END:PP_PL_END] /* synthesis ramstyle = "logic" */;
 
 // Reverse LPF
 wire rlpf_trigger_act;
@@ -170,14 +173,11 @@ function [7:0] apply_reverse_lpf;
 endfunction
 
 
+// Pipeline stage 1
 always @(posedge PCLK_i) begin
     R_pp[1] <= R_i;
     G_pp[1] <= G_i;
     B_pp[1] <= B_i;
-    DE_pp[1] <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
-    datavalid_pp[1] <= (h_ctr == H_SAMPLE_SEL);
-    xpos_pp[1] <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
-    ypos_pp[1] <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
 
     HS_i_prev <= HS_i;
     VS_i_np_prev <= VS_i_np;
@@ -245,10 +245,23 @@ always @(posedge PCLK_i) begin
     end
 end
 
-// Pipeline stages 2-
+// Pipeline stage 2
+always @(posedge PCLK_i) begin
+    {R_pp[2], G_pp[2], B_pp[2]} <= {R_pp[1], G_pp[1], B_pp[1]};
+    HSYNC_pp[2] <= HSYNC_pp[1];
+    VSYNC_pp[2] <= VSYNC_pp[1];
+    FID_pp[2] <= FID_pp[1];
+
+    DE_pp[2] <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
+    datavalid_pp[2] <= (h_ctr == H_SAMPLE_SEL);
+    xpos_pp[2] <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
+    ypos_pp[2] <= (v_cnt-V_SYNCLEN-V_BACKPORCH);
+end
+
+// Pipeline stages 3-
 integer pp_idx;
 always @(posedge PCLK_i) begin
-    for(pp_idx = PP_PL_START+1; pp_idx <= PP_PL_END; pp_idx = pp_idx+1) begin
+    for(pp_idx = PP_DE_POS_END+1; pp_idx <= PP_PL_END; pp_idx = pp_idx+1) begin
         R_pp[pp_idx] <= R_pp[pp_idx-1];
         G_pp[pp_idx] <= G_pp[pp_idx-1];
         B_pp[pp_idx] <= B_pp[pp_idx-1];
