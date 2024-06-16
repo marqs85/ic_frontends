@@ -41,7 +41,7 @@ module adv7280a_frontend (
     output reg [10:0] vtotal,
     output reg frame_change,
     output reg sof_scaler,
-    output reg [19:0] pcnt_frame
+    output reg [19:0] pcnt_field
 );
 
 localparam FID_EVEN = 1'b0;
@@ -203,7 +203,7 @@ always @(posedge CLK_MEAS_i) begin
 
     if (~frame_change_meas_sync3_reg & frame_change_meas_sync2_reg) begin
         pcnt_frame_ctr <= 1;
-        pcnt_frame <= interlace_flag ? (pcnt_frame_ctr>>1) : pcnt_frame_ctr[19:0];
+        pcnt_field <= interlace_flag ? (pcnt_frame_ctr>>1) : pcnt_frame_ctr[19:0];
     end else if (pcnt_frame_ctr < 21'h1fffff) begin
         pcnt_frame_ctr <= pcnt_frame_ctr + 1'b1;
     end

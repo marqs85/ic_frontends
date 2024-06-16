@@ -53,7 +53,7 @@ module isl51002_frontend (
     output reg [10:0] vtotal,
     output reg frame_change,
     output reg sof_scaler,
-    output reg [19:0] pcnt_frame
+    output reg [19:0] pcnt_field
 );
 
 localparam FID_EVEN = 1'b0;
@@ -128,8 +128,8 @@ wire [11:0] even_max_thold = (vsync_i_type == VSYNC_SEPARATED) ? even_max_thold_
 wire [11:0] meas_even_min_thold = (vsync_i_type == VSYNC_SEPARATED) ? (pcnt_line / 12'd2) : (pcnt_line / 12'd4);
 wire [11:0] meas_even_max_thold = (vsync_i_type == VSYNC_SEPARATED) ? pcnt_line : (pcnt_line / 12'd2) + (pcnt_line / 12'd4);
 
-wire meas_vblank_region = (pcnt_frame_ctr < 8*pcnt_line) | (pcnt_frame_ctr > (({1'b0, pcnt_frame}<<interlace_flag) - 4*pcnt_line)) |
-                          (interlace_flag & (pcnt_frame_ctr < (pcnt_frame+8*pcnt_line)) & (pcnt_frame_ctr > (pcnt_frame - 4*pcnt_line)));
+wire meas_vblank_region = (pcnt_frame_ctr < 8*pcnt_line) | (pcnt_frame_ctr > (({1'b0, pcnt_field}<<interlace_flag) - 4*pcnt_line)) |
+                          (interlace_flag & (pcnt_frame_ctr < (pcnt_field+8*pcnt_line)) & (pcnt_frame_ctr > (pcnt_field - 4*pcnt_line)));
 wire [11:0] glitch_filt_thold = meas_vblank_region ? (pcnt_line/4) : (pcnt_line/8);
 
 // TODO: calculate H/V polarity independently
@@ -315,7 +315,7 @@ always @(posedge CLK_MEAS_i) begin
     if ((VSYNC_i_np_prev & ~VSYNC_i_np) & (~interlace_flag | (meas_fid == FID_EVEN))) begin
         pcnt_frame_ctr <= 1;
         pcnt_line_stored <= 1'b0;
-        pcnt_frame <= interlace_flag ? (pcnt_frame_ctr>>1) : pcnt_frame_ctr[19:0];
+        pcnt_field <= interlace_flag ? (pcnt_frame_ctr>>1) : pcnt_frame_ctr[19:0];
     end else if (pcnt_frame_ctr < 21'h1fffff) begin
         pcnt_frame_ctr <= pcnt_frame_ctr + 1'b1;
     end
