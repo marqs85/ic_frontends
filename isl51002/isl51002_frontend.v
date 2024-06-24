@@ -102,6 +102,10 @@ wire rlpf_trigger_act;
 reg signed [14:0] R_diff_s15_pre, G_diff_s15_pre, B_diff_s15_pre, R_diff_s15, G_diff_s15, B_diff_s15;
 reg [7:0] R_pp_prev_rlpf, G_pp_prev_rlpf, B_pp_prev_rlpf;
 
+// Lumacode
+reg [1:0] lumacode_msbs, lumacode_lsbs;
+wire [3:0] lumacode = {lumacode_msbs, lumacode_lsbs};
+
 // Measurement registers
 reg [20:0] pcnt_frame_ctr;
 reg [11:0] pcnt_line, pcnt_line_ctr, meas_h_cnt;
@@ -120,6 +124,7 @@ wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 
 wire [5:0] MISC_REV_LPF_STR = (misc_config[11:7] + 6'd16);
 wire MISC_REV_LPF_ENABLE = (misc_config[11:7] != 5'h0);
+wire [1:0] MISC_LUMACODE_MODE = misc_config[31:30];
 
 wire [11:0] even_min_thold_hv = (H_TOTAL / 12'd4);
 wire [11:0] even_max_thold_hv = (H_TOTAL / 12'd2) + (H_TOTAL / 12'd4);
@@ -143,6 +148,12 @@ wire HSYNC_i_np = (HSYNC_i ^ ~hsync_i_polarity);
 // Sample skip for low-res optimized modes
 wire [3:0] H_SKIP = hv_in_config2[12:9];
 wire [3:0] H_SAMPLE_SEL = hv_in_config2[17:14];
+wire [3:0] H_SAMPLE_SEL_ALT = (H_SAMPLE_SEL >= (H_SKIP+1)/2) ? (H_SAMPLE_SEL - ((H_SKIP+1)/2)) : (H_SAMPLE_SEL + ((H_SKIP+1)/2));
+
+// Lumacode tables (C64, Spectrum, Coleco/MSX)
+wire [23:0] lumacode_data[0:2][0:15] = '{'{ 24'h000000,24'h2a1b9d,24'h7d202c,24'h84258c,24'h4c2e00,24'h3c3c3c,24'h646464,24'h4fb3a5,24'h7f410d,24'h6351db,24'h939393,24'hbfd04a,24'h339840,24'hb44f5c,24'h7ce587,24'hffffff},
+                                         '{ 24'h000000,24'h000000,24'h0200FD,24'hCF01CE,24'h0100CE,24'hCF0100,24'hFF02FD,24'h01CFCF,24'hFF0201,24'h00CF15,24'h02FFFF,24'hFFFF1D,24'h00FF1C,24'hCFCF15,24'hCFCFCF,24'hFFFFFF},
+                                         '{ 24'h000000,24'h5455ed,24'hfc5554,24'hff7978,24'h000000,24'hd4524d,24'h7d76fc,24'h42ebf5,24'h21b03b,24'h21c842,24'hff7978,24'hcccccc,24'hc95bba,24'hd4c154,24'he6ce80,24'hffffff}};
 
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
@@ -247,7 +258,19 @@ end
 
 // Pipeline stage 2
 always @(posedge PCLK_i) begin
-    {R_pp[2], G_pp[2], B_pp[2]} <= {R_pp[1], G_pp[1], B_pp[1]};
+    // Lumacode
+    if (h_ctr == H_SAMPLE_SEL) begin
+        lumacode_msbs <= G_pp[1][7:6];
+    end else if (h_ctr == H_SAMPLE_SEL_ALT) begin
+        lumacode_lsbs <= G_pp[1][7:6];
+    end
+
+    if (MISC_LUMACODE_MODE == 2'h0) begin
+        {R_pp[2], G_pp[2], B_pp[2]} <= {R_pp[1], G_pp[1], B_pp[1]};
+    end else begin
+        {R_pp[2], G_pp[2], B_pp[2]} <= lumacode_data[MISC_LUMACODE_MODE-1'b1][lumacode];
+    end
+
     HSYNC_pp[2] <= HSYNC_pp[1];
     VSYNC_pp[2] <= VSYNC_pp[1];
     FID_pp[2] <= FID_pp[1];
