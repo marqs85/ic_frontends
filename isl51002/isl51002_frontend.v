@@ -392,7 +392,7 @@ always @(posedge CLK_MEAS_i) begin
             if (VSYNC_i_np)
                 meas_vsync_region <= 1'b0;
         end
-    end else if (meas_vblank_region & (meas_h_cnt >= pcnt_line)) begin
+    end else if (meas_vblank_region & (meas_h_cnt >= pcnt_line+4)) begin
         // hsync may be missing or irregular during vblank, force line change detect if pcnt_line is exceeded
         meas_hl_det <= 1'b0;
         meas_h_cnt <= 0;
