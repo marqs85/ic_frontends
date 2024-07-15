@@ -39,6 +39,7 @@ module isl51002_frontend (
     input [31:0] hv_in_config2,
     input [31:0] hv_in_config3,
     input [31:0] misc_config,
+    input [31:0] misc_config2,
     output [7:0] R_o,
     output [7:0] G_o,
     output [7:0] B_o,
@@ -103,8 +104,10 @@ reg signed [14:0] R_diff_s15_pre, G_diff_s15_pre, B_diff_s15_pre, R_diff_s15, G_
 reg [7:0] R_pp_prev_rlpf, G_pp_prev_rlpf, B_pp_prev_rlpf;
 
 // Lumacode
-reg [1:0] lumacode_msbs, lumacode_lsbs;
-wire [3:0] lumacode = {lumacode_msbs, lumacode_lsbs};
+reg [1:0] lc_code[1:4];
+reg [2:0] lc_ctr;
+reg [2:0] lc_cnt;
+reg [2:0] lc_emp_nes;
 
 // Measurement registers
 reg [20:0] pcnt_frame_ctr;
@@ -124,7 +127,7 @@ wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 
 wire [5:0] MISC_REV_LPF_STR = (misc_config[11:7] + 6'd16);
 wire MISC_REV_LPF_ENABLE = (misc_config[11:7] != 5'h0);
-wire [1:0] MISC_LUMACODE_MODE = misc_config[31:30];
+wire [2:0] MISC_LUMACODE_MODE = misc_config2[2:0];
 
 wire [11:0] even_min_thold_hv = (H_TOTAL / 12'd4);
 wire [11:0] even_max_thold_hv = (H_TOTAL / 12'd2) + (H_TOTAL / 12'd4);
@@ -148,12 +151,25 @@ wire HSYNC_i_np = (HSYNC_i ^ ~hsync_i_polarity);
 // Sample skip for low-res optimized modes
 wire [3:0] H_SKIP = hv_in_config2[12:9];
 wire [3:0] H_SAMPLE_SEL = hv_in_config2[17:14];
-wire [3:0] H_SAMPLE_SEL_ALT = (H_SAMPLE_SEL >= (H_SKIP+1)/2) ? (H_SAMPLE_SEL - ((H_SKIP+1)/2)) : (H_SAMPLE_SEL + ((H_SKIP+1)/2));
 
-// Lumacode tables (C64, Spectrum, Coleco/MSX)
-wire [23:0] lumacode_data[0:2][0:15] = '{'{ 24'h000000,24'h2a1b9d,24'h7d202c,24'h84258c,24'h4c2e00,24'h3c3c3c,24'h646464,24'h4fb3a5,24'h7f410d,24'h6351db,24'h939393,24'hbfd04a,24'h339840,24'hb44f5c,24'h7ce587,24'hffffff},
-                                         '{ 24'h000000,24'h000000,24'h0200FD,24'hCF01CE,24'h0100CE,24'hCF0100,24'hFF02FD,24'h01CFCF,24'hFF0201,24'h00CF15,24'h02FFFF,24'hFFFF1D,24'h00FF1C,24'hCFCF15,24'hCFCFCF,24'hFFFFFF},
-                                         '{ 24'h000000,24'h5455ed,24'hfc5554,24'hff7978,24'h000000,24'hd4524d,24'h7d76fc,24'h42ebf5,24'h21b03b,24'h21c842,24'hff7978,24'hcccccc,24'hc95bba,24'hd4c154,24'he6ce80,24'hffffff}};
+// Lumacode uses 2 samples for {C64, C128, VIC20, Spectrum, TMS99xxA}, 3 samples for NES, 4 samples for VCS and 6 samples for Atari 8bit
+wire [2:0] LC_SAMPLES = (MISC_LUMACODE_MODE <= 3) ? 2 : ((MISC_LUMACODE_MODE <= 4) ? 3 : ((MISC_LUMACODE_MODE <= 5) ? 4 : 6));
+wire [2:0] LC_H_SKIP = ((H_SKIP+1) / LC_SAMPLES) - 1;
+
+// Lumacode palettes for 2-sample index-based sources (C64, Spectrum, Coleco/MSX)
+wire [23:0] lumacode_data_2s[0:2][0:15] = '{'{ 24'h000000,24'h2a1b9d,24'h7d202c,24'h84258c,24'h4c2e00,24'h3c3c3c,24'h646464,24'h4fb3a5,24'h7f410d,24'h6351db,24'h939393,24'hbfd04a,24'h339840,24'hb44f5c,24'h7ce587,24'hffffff},
+                                            '{ 24'h000000,24'h000000,24'h0200FD,24'hCF01CE,24'h0100CE,24'hCF0100,24'hFF02FD,24'h01CFCF,24'hFF0201,24'h00CF15,24'h02FFFF,24'hFFFF1D,24'h00FF1C,24'hCFCF15,24'hCFCFCF,24'hFFFFFF},
+                                            '{ 24'h000000,24'h5455ed,24'hfc5554,24'hff7978,24'h000000,24'hd4524d,24'h7d76fc,24'h42ebf5,24'h21b03b,24'h21c842,24'hff7978,24'hcccccc,24'hc95bba,24'hd4c154,24'he6ce80,24'hffffff}};
+
+// Lumacode palette for NES
+wire [23:0] lumacode_data_3s[0:63] = '{ 24'h000000, 24'h000000, 24'h000000, 24'h000000, 24'h000000, 24'h000000, 24'h000000, 24'h000000,
+                                        24'h626262, 24'h001fb2, 24'h2404c8, 24'h5200b2, 24'h730076, 24'h800024, 24'h730b00, 24'h522800, 24'h244400, 24'h005700, 24'h005c00, 24'h005324, 24'h003c76, 24'h000000,
+                                        24'hababab, 24'h0d57ff, 24'h4b30ff, 24'h8a13ff, 24'hbc08d6, 24'hd21269, 24'hc72e00, 24'h9d5400, 24'h607b00, 24'h209800, 24'h00a300, 24'h009942, 24'h007db4, 24'h000000,
+                                        24'hffffff, 24'h53aeff, 24'h9085ff, 24'hd365ff, 24'hff57ff, 24'hff5dcf, 24'hff7757, 24'hfa9e00, 24'hbdc700, 24'h7ae700, 24'h43f611, 24'h26ef7e, 24'h2cd5f6, 24'h4e4e4e,
+                                        24'hffffff, 24'hb6e1ff, 24'hced1ff, 24'he9c3ff, 24'hffbcff, 24'hffbdf4, 24'hffc6c3, 24'hffd59a, 24'he9e681, 24'hcef481, 24'hb6fb9a, 24'ha9fac3, 24'ha9f0f4, 24'hb8b8b8};
+wire [7:0] lumacode_data_3s_R = lumacode_data_3s[{lc_code[1], lc_code[2], lc_code[3]}][23:16];
+wire [7:0] lumacode_data_3s_G = lumacode_data_3s[{lc_code[1], lc_code[2], lc_code[3]}][15:8];
+wire [7:0] lumacode_data_3s_B = lumacode_data_3s[{lc_code[1], lc_code[2], lc_code[3]}][7:0];
 
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
@@ -258,23 +274,61 @@ end
 
 // Pipeline stage 2
 always @(posedge PCLK_i) begin
-    // Lumacode
+    // Lumacode sample aggregation
     if (h_ctr == H_SAMPLE_SEL) begin
-        lumacode_msbs <= G_pp[1][7:6];
-    end else if (h_ctr == H_SAMPLE_SEL_ALT) begin
-        lumacode_lsbs <= G_pp[1][7:6];
+        lc_code[1] <= G_pp[1][7:6];
+        lc_cnt <= 0;
+        lc_ctr <= 0;
+    end else if (lc_ctr == LC_H_SKIP) begin
+        lc_code[2+lc_cnt] <= G_pp[1][7:6];
+        lc_cnt <= lc_cnt + 1;
+        lc_ctr <= 0;
+    end else begin
+        lc_ctr <= lc_ctr + 1;
     end
 
-    if (MISC_LUMACODE_MODE == 2'h0) begin
+    // Standard output
+    if (MISC_LUMACODE_MODE == '0) begin
         {R_pp[2], G_pp[2], B_pp[2]} <= {R_pp[1], G_pp[1], B_pp[1]};
+    // Lumacode C64, C128, VIC20, Spectrum, TMS99xxA
+    end else if (MISC_LUMACODE_MODE <= 3) begin
+        {R_pp[2], G_pp[2], B_pp[2]} <= lumacode_data_2s[MISC_LUMACODE_MODE-1'b1][{lc_code[1], lc_code[2]}];
+    // Lumacode NES
+    end else if (MISC_LUMACODE_MODE == 4) begin
+        if (lc_emp_nes[1] & lc_emp_nes[0])
+            R_pp[2] <= lumacode_data_3s_R/2;
+        else if (lc_emp_nes[1] | lc_emp_nes[0])
+            R_pp[2] <= lumacode_data_3s_R - lumacode_data_3s_R/4;
+        else
+            R_pp[2] <= lumacode_data_3s_R;
+
+        if (lc_emp_nes[2] & lc_emp_nes[0])
+            G_pp[2] <= lumacode_data_3s_G/2;
+        else if (lc_emp_nes[2] | lc_emp_nes[0])
+            G_pp[2] <= lumacode_data_3s_G - lumacode_data_3s_G/4;
+        else
+            G_pp[2] <= lumacode_data_3s_G;
+
+        if (lc_emp_nes[2] & lc_emp_nes[1])
+            B_pp[2] <= lumacode_data_3s_B/2;
+        else if (lc_emp_nes[2] | lc_emp_nes[1])
+            B_pp[2] <= lumacode_data_3s_B - lumacode_data_3s_B/4;
+        else
+            B_pp[2] <= lumacode_data_3s_B;
+
+        if ((h_ctr == H_SAMPLE_SEL) & ({lc_code[1], lc_code[2], lc_code[3]} < 8))
+            lc_emp_nes <= {lc_code[2][0], lc_code[3]};
+    // TODO: Lumacode VCS
+    end else if (MISC_LUMACODE_MODE == 5) begin
+        {R_pp[2], G_pp[2], B_pp[2]} <= '0;
+    // TODO: Lumacode Atari 8-bit
     end else begin
-        {R_pp[2], G_pp[2], B_pp[2]} <= lumacode_data[MISC_LUMACODE_MODE-1'b1][lumacode];
+        {R_pp[2], G_pp[2], B_pp[2]} <= '0;
     end
 
     HSYNC_pp[2] <= HSYNC_pp[1];
     VSYNC_pp[2] <= VSYNC_pp[1];
     FID_pp[2] <= FID_pp[1];
-
     DE_pp[2] <= (h_cnt >= H_SYNCLEN+H_BACKPORCH) & (h_cnt < H_SYNCLEN+H_BACKPORCH+H_ACTIVE) & (v_cnt >= V_SYNCLEN+V_BACKPORCH) & (v_cnt < V_SYNCLEN+V_BACKPORCH+V_ACTIVE);
     datavalid_pp[2] <= (h_ctr == H_SAMPLE_SEL);
     xpos_pp[2] <= (h_cnt-H_SYNCLEN-H_BACKPORCH);
