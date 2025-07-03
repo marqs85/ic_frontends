@@ -51,7 +51,9 @@ localparam PP_PL_START      = 1;
 localparam PP_PL_END        = 6;
 
 reg HS_i_prev, VS_i_prev;
-reg [7:0] EAV, EAV_prev;
+reg [7:0] P_DATA_i_q, P_DATA_i_qq;
+reg [7:0] EAV_prev;
+wire [7:0] EAV = P_DATA_i_q;
 reg ntscmode;
 
 reg [11:0] h_cnt;
@@ -89,6 +91,9 @@ wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
 
 wire [25:0] R_Cr_pre, G_Cb_pre, G_Cr_pre, B_Cb_pre;
 reg [10:0] R_csc_sum, G_csc_sum, B_csc_sum;
+
+wire sav_eav_detected = ({P_DATA_i_qq, P_DATA_i_q, P_DATA_i} == 24'hFF0000);
+reg sav_eav_detected_prev;
 
 always @(posedge PCLK_i) begin
     if (~HS_i_prev & HS_i) begin
@@ -132,7 +137,9 @@ always @(posedge PCLK_i) begin
 
     HS_i_prev <= HS_i;
     VS_i_prev <= VS_i;
-    EAV <= P_DATA_i;
+    P_DATA_i_q <= P_DATA_i;
+    P_DATA_i_qq <= P_DATA_i_q;
+    sav_eav_detected_prev <= sav_eav_detected;
 
     // Merge components (Cb, Y, Cr, Y)
     if (h_ctr == 3) begin
@@ -141,13 +148,23 @@ always @(posedge PCLK_i) begin
     Cb_pp[2] <= Cb_pp[1];
     Cb_pp[3] <= Cb_pp[2];
 
-    if ((h_ctr == 0) || (h_ctr == 2)) begin
+    if ((h_ctr == 0) || ((h_ctr == 2) & !sav_eav_detected_prev)) begin
         Y_pp[2] <= P_DATA_i;
     end
     Y_pp[3] <= Y_pp[2];
 
     if (h_ctr == 1) begin
         Cr_pp[3] <= P_DATA_i;
+    end
+
+    // blank data when SAV/EAV detected (occurs when h_ctr == 1)
+    if (sav_eav_detected) begin
+        Cr_pp[3] <= 8'h80;
+        Cb_pp[3] <= 8'h80;
+        Cb_pp[2] <= 8'h80;
+        Cb_pp[1] <= 8'h80;
+        Y_pp[3] <= 8'h10;
+        Y_pp[2] <= 8'h10;
     end
 end
 
