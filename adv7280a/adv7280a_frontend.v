@@ -74,7 +74,7 @@ reg [7:0] Cb_pp[PP_PL_START:3] /* synthesis ramstyle = "logic" */;
 reg [7:0] Y_pp[PP_PL_START+1:5] /* synthesis ramstyle = "logic" */;
 reg [7:0] Cr_pp[PP_PL_START+2:3] /* synthesis ramstyle = "logic" */;
 
-reg [10:0] R_Cr, G_Cb, G_Cr, B_Cb;
+reg signed [10:0] R_Cr, G_Cb, G_Cr, B_Cb;
 reg [7:0] R_csc, G_csc, B_csc;
 
 wire [11:0] H_TOTAL = hv_in_config[11:0];
@@ -89,8 +89,8 @@ wire [8:0] V_BACKPORCH = hv_in_config2[29:21];
 // SOF position for scaler
 wire [10:0] V_SOF_LINE = hv_in_config3[27:16];
 
-wire [25:0] R_Cr_pre, G_Cb_pre, G_Cr_pre, B_Cb_pre;
-reg [10:0] R_csc_sum, G_csc_sum, B_csc_sum;
+wire signed [25:0] R_Cr_pre, G_Cb_pre, G_Cr_pre, B_Cb_pre;
+reg signed [10:0] R_csc_sum, G_csc_sum, B_csc_sum;
 
 wire sav_eav_detected = ({P_DATA_i_qq, P_DATA_i_q, P_DATA_i} == 24'hFF0000);
 reg sav_eav_detected_prev;
@@ -178,7 +178,7 @@ always @(posedge PCLK_i) begin
         DE_pp[pp_idx] <= DE_pp[pp_idx-1];
     end
 
-    Y_pp[4] <= Y_pp[3];
+    Y_pp[4] <= (Y_pp[3] >= 16) ? (Y_pp[3] - 16) : 0; // Luma range [16...235]
     Y_pp[5] <= Y_pp[4];
 
     R_Cr <= R_Cr_pre[25:15];
@@ -186,23 +186,23 @@ always @(posedge PCLK_i) begin
     G_Cr <= G_Cr_pre[25:15];
     B_Cb <= B_Cb_pre[25:15];
 
-    if (R_csc_sum[10] == 1'b1)
+    if (R_csc_sum < 11'sd0)
         R_csc <= 8'h00;
-    else if ((R_csc_sum[9] | R_csc_sum[8]) == 1'b1)
+    else if (R_csc_sum > 11'sd255)
         R_csc <= 8'hFF;
     else
         R_csc <= R_csc_sum[7:0];
 
-    if (G_csc_sum[10] == 1'b1)
+    if (G_csc_sum < 11'sd0)
         G_csc <= 8'h00;
-    else if ((G_csc_sum[9] | G_csc_sum[8]) == 1'b1)
+    else if (G_csc_sum > 11'sd255)
         G_csc <= 8'hFF;
     else
         G_csc <= G_csc_sum[7:0];
 
-    if (B_csc_sum[10] == 1'b1)
+    if (B_csc_sum < 11'sd0)
         B_csc <= 8'h00;
-    else if ((B_csc_sum[9] | B_csc_sum[8]) == 1'b1)
+    else if (B_csc_sum > 11'sd255)
         B_csc <= 8'hFF;
     else
         B_csc <= B_csc_sum[7:0];
@@ -245,7 +245,7 @@ wire signed [17:0] Cb_in = Cb_pp[3] - 8'sd128;
 lpm_mult csc_mult_component_0 (
     // Inputs
     .dataa  (Cr_in),
-    .datab  (18'h0B395),
+    .datab  (18'h0AF73),
     .aclr   (1'b0),
     .clken  (1'b1),
     .clock  (PCLK_i),
@@ -266,7 +266,7 @@ defparam
 lpm_mult csc_mult_component_1 (
     // Inputs
     .dataa  (Cb_in),
-    .datab  (18'h02C08),
+    .datab  (18'h02AFF),
     .aclr   (1'b0),
     .clken  (1'b1),
     .clock  (PCLK_i),
@@ -287,7 +287,7 @@ defparam
 lpm_mult csc_mult_component_2 (
     // Inputs
     .dataa  (Cr_in),
-    .datab  (18'h05B64),
+    .datab  (18'h0595E),
     .aclr   (1'b0),
     .clken  (1'b1),
     .clock  (PCLK_i),
@@ -308,7 +308,7 @@ defparam
 lpm_mult csc_mult_component_3 (
     // Inputs
     .dataa  (Cb_in),
-    .datab  (18'h0E2F1),
+    .datab  (18'h0DDC0),
     .aclr   (1'b0),
     .clken  (1'b1),
     .clock  (PCLK_i),
